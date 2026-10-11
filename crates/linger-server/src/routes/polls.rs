@@ -17,6 +17,7 @@ use linger_core::{MessageId, RoomId};
 use crate::auth::{AuthedUser, HostOrCohost};
 use crate::db::now_ms;
 use crate::error::ApiError;
+use crate::routes::messages::already_posted;
 use crate::state::AppState;
 use crate::{repo, validate};
 
@@ -97,15 +98,27 @@ fn as_words(question: &str, choices: &[String]) -> String {
 
 /// Ask a room a question (#474). The host or a co-host only, as every `/`
 /// command is; rooms only, as a message of the day is.
+///
+/// Asked again with its one-time key, a poll that was asked is answered with
+/// that poll and nothing else happens, as a message is (#524,
+/// `routes::messages::create`).
 async fn create(
     State(state): State<AppState>,
     host: HostOrCohost,
     Path(room_id): Path<RoomId>,
     Json(req): Json<CreatePollRequest>,
 ) -> Result<Json<Message>, ApiError> {
+    let nonce = req.nonce.as_deref().map(validate::nonce).transpose()?;
     let room = repo::rooms::expect(&state.db.read, room_id).await?;
     if room.kind != RoomKind::Room {
         return Err(ApiError::not_found("No such room on this server."));
+    }
+    // Before the archived check, as a message's is: it was asked while the
+    // room wasn't.
+    if let Some(nonce) = nonce {
+        if let Some(saved) = repo::nonces::posted(&state.db.read, host.id, nonce, now_ms()).await? {
+            return already_posted(&state, room_id, saved).await.map(Json);
+        }
     }
     if room.archived_at.is_some() {
         return Err(ApiError::validation("That room is archived."));
@@ -115,6 +128,12 @@ async fn create(
     let id = MessageId::new();
     let at = now_ms();
     let mut tx = state.db.write.begin().await?;
+    if let Some(nonce) = nonce {
+        if let Some(saved) = repo::nonces::check_in(&mut tx, host.id, nonce, at).await? {
+            tx.rollback().await?;
+            return already_posted(&state, room_id, saved).await.map(Json);
+        }
+    }
     sqlx::query(
         "INSERT INTO messages (id, room_id, author_id, body, created_at)
          VALUES (?, ?, ?, ?, ?)",
@@ -126,6 +145,9 @@ async fn create(
     .bind(at)
     .execute(&mut *tx)
     .await?;
+    if let Some(nonce) = nonce {
+        repo::nonces::remember(&mut *tx, host.id, nonce, id, at).await?;
+    }
     sqlx::query("INSERT INTO polls (message_id, question, multi, closes_at) VALUES (?, ?, ?, ?)")
         .bind(id.to_vec())
         .bind(&question)
@@ -141,10 +163,11 @@ async fn create(
             .execute(&mut *tx)
             .await?;
     }
+    // Asking is catching up, as saying anything is (#454), and saved with the
+    // poll, as a post's marker is with the post (#524).
+    crate::routes::messages::advance_read_marker(&mut *tx, host.id, room_id, id).await?;
     tx.commit().await?;
 
-    // Asking is catching up, as saying anything is (#454).
-    crate::routes::messages::advance_read_marker(&state, host.id, room_id, id).await?;
     let message = repo::messages::expect(&state.db.read, &state.config, id).await?;
     state
         .gateway

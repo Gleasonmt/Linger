@@ -360,7 +360,7 @@ that distinguishes "a DM you are not in" from "no such room".
 ```
 GET  /rooms/:id/messages?before=<id>&after=<id>&limit=<1..100>   → Message[]
 GET  /rooms/:id/messages?around=<id>&limit=<1..100>              → Message[]
-POST /rooms/:id/messages   { body, reply_to?, attachment_ids? }  → Message
+POST /rooms/:id/messages   { body, reply_to?, attachment_ids?, nonce? }  → Message
 PATCH  /messages/:id       { body }                              → Message
 DELETE /messages/:id                                             → 204
 POST   /messages/:id/pin                                         → Message
@@ -407,6 +407,33 @@ in the `complete` state, and not already be on another message; at most
 `linger-core::limits::MAX_ATTACHMENTS_PER_MESSAGE` per message. Reusing
 somebody else's attachment id is `FORBIDDEN`, and reusing one that is already
 posted is `CONFLICT`.
+
+A post is all or nothing: the message, the links it holds, its files and the
+sender's read marker are saved in one transaction (#524). A post that fails
+left nothing behind, so sending it again doesn't post it twice, and its files
+are still free to send.
+
+`nonce` is what makes sending again safe when the post did land and only its
+answer was lost on the way back (#524). Asking a poll takes one the same way (below). It is a one-time key the client makes
+up for each send (the app uses a UUID) and sends again, unchanged, with every
+retry of that send: 1–64 letters, digits, `-` or `_`
+(`linger-core::limits::MAX_NONCE_CHARS`), or `VALIDATION_FAILED`. When the same
+person already posted with the same key in the last week
+(`linger-core::limits::NONCE_KEPT_MS`), the answer is that message as it is
+now, edited or deleted since or not, with a success status, and nothing else
+happens: no second message, no second `message.create`, the read marker isn't
+moved, and the files named in the retry aren't looked at (they're on that
+message already). A deleted message's key stays spent, so a retry answers
+with its tombstone and can't bring it back. The key is checked before whether
+the room is archived, since it was posted while it wasn't. The same key from
+two people is two messages. The same person's key used in another room is
+`CONFLICT`: one send lands in one room.
+
+Keys are remembered for a week, not for the message's life: a retry only comes
+from a client still holding the unsent message. Each post that carries a key
+clears out the keys older than that. A post without `nonce` is always a new
+message, which is what a client from before the field gets; a server from
+before it ignores the field, so a new client there is as it always was.
 
 `reply_to` must reference a message in the same room. Pin/unpin is any member;
 there is no pin hierarchy.
@@ -468,7 +495,7 @@ it to edit it anyway.
 in it answers with a click.
 
 ```
-POST /rooms/:id/polls      (host or co-host) { question, choices, multi, closes_in_days } → Message
+POST /rooms/:id/polls      (host or co-host) { question, choices, multi, closes_in_days, nonce? } → Message
 PUT  /messages/:id/vote    { choices: number[] }                                       → Message
 POST /messages/:id/close   (whoever asked)                                             → Message
 ```
@@ -495,6 +522,9 @@ type PollClosed = { poll_id: string; question: string; winners: string[] };   //
   is a room's `last_message_id` like anything said. Its body is the question and the choices
   as a Markdown list, so an app from before polls shows them as words, and search finds them.
   A client neither notifies nor sounds for one, whoever it names. It can't be edited.
+  `nonce` is the ask's one-time key, exactly as a message's (above, #524): the same rules,
+  the same week, kept in the same place, so asked again with its key, a poll that was
+  asked is answered with that poll and nothing is asked twice.
 - **Voting** is anybody who can see the room, whoever asked included: the choices' places,
   replacing any vote before, `[]` taking it back; more than one only when `multi`; at most
   `RATE_POLL_VOTE` (20 in 10 s). A poll that is closed, or whose `closes_at` has passed, takes

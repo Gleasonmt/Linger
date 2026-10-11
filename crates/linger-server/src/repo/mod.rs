@@ -8,6 +8,7 @@ pub mod emoji;
 pub mod links;
 pub mod media;
 pub mod messages;
+pub mod nonces;
 #[cfg(test)]
 mod plans;
 pub mod polls;

@@ -111,7 +111,18 @@ async fn create(
         return Err(ApiError::rate_limited(retry));
     }
 
+    let nonce = req.nonce.as_deref().map(validate::nonce).transpose()?;
+
     let room = repo::rooms::visible_to(&state.db.read, room_id, auth.id).await?;
+    // A retry of a post that was saved, whose answer was lost on the way back
+    // (#524): the message saved then, and nothing new. Asked before the files
+    // are checked, because a retry's files are on that message already, and
+    // before the room's archived check, because it was posted while it wasn't.
+    if let Some(nonce) = nonce {
+        if let Some(saved) = repo::nonces::posted(&state.db.read, auth.id, nonce, now_ms()).await? {
+            return already_posted(&state, room_id, saved).await.map(Json);
+        }
+    }
     if room.archived_at.is_some() {
         return Err(ApiError::validation("That room is archived."));
     }
@@ -130,6 +141,22 @@ async fn create(
     }
 
     let id = MessageId::new();
+    let links = crate::links::extract(&body);
+    let now = now_ms();
+    // Everything posting writes is one transaction (#524): a failure partway
+    // leaves nothing behind, rather than a saved message the sender was told
+    // didn't send, and posts again when they press Retry. It is also one
+    // commit instead of one per write. Nothing slow happens inside it.
+    let mut tx = state.db.write.begin().await?;
+    if let Some(nonce) = nonce {
+        // Asked again in here, where this post has the one writer to itself
+        // (`db.rs`): a retry sent while the first try was still being saved
+        // waited for it, and finds it now.
+        if let Some(saved) = repo::nonces::check_in(&mut tx, auth.id, nonce, now).await? {
+            tx.rollback().await?;
+            return already_posted(&state, room_id, saved).await.map(Json);
+        }
+    }
     sqlx::query(
         "INSERT INTO messages (id, room_id, author_id, body, reply_to, created_at)
          VALUES (?, ?, ?, ?, ?, ?)",
@@ -139,15 +166,18 @@ async fn create(
     .bind(auth.id.to_vec())
     .bind(&body)
     .bind(req.reply_to.map(|r| r.to_vec()))
-    .bind(now_ms())
-    .execute(&state.db.write)
+    .bind(now)
+    .execute(&mut *tx)
     .await?;
+    if let Some(nonce) = nonce {
+        repo::nonces::remember(&mut *tx, auth.id, nonce, id, now).await?;
+    }
 
     // What the message links to, recorded as it is posted so the media grid's
     // links are a table read rather than a scan of every body ever written
     // (SPEC §4.4). The cards themselves are filled in later, on demand, by
     // `POST /links/preview` — nothing here touches the network.
-    repo::links::replace_for_message(&state.db.write, id, &crate::links::extract(&body)).await?;
+    repo::links::replace_for_message(&mut tx, id, &links).await?;
 
     // Attaching is the last step of the upload pipeline (ARCHITECTURE §8): the
     // file has been stored and checked for a while by now, and this is the
@@ -156,7 +186,7 @@ async fn create(
         sqlx::query("UPDATE attachments SET message_id = ? WHERE id = ? AND message_id IS NULL")
             .bind(id.to_vec())
             .bind(attachment_id.to_vec())
-            .execute(&state.db.write)
+            .execute(&mut *tx)
             .await?;
     }
 
@@ -164,13 +194,40 @@ async fn create(
     // look new on any of your devices (#454). Moved here rather than left to
     // the sending device, whose debounced write is lost when a phone is put
     // away straight after sending.
-    advance_read_marker(&state, auth.id, room_id, id).await?;
+    advance_read_marker(&mut *tx, auth.id, room_id, id).await?;
+    tx.commit().await?;
 
     let message = repo::messages::expect(&state.db.read, &state.config, id).await?;
     state
         .gateway
         .publish(ServerEvent::MessageCreate(message.clone()));
     Ok(Json(message))
+}
+
+/// The answer to a retry of a post that was saved (#524): that message as it
+/// is now, and nothing else happens. No second `message.create`, no read
+/// marker moved, no files taken: the first try did all of that.
+///
+/// Edited since, it's the edited message. Deleted since, it's the tombstone,
+/// and the retry posts nothing: the key stays spent, so a retry can't bring
+/// back what its author or a host took down.
+///
+/// Asking a poll answers its retries with this too (`routes::polls`).
+pub(crate) async fn already_posted(
+    state: &AppState,
+    room_id: RoomId,
+    id: MessageId,
+) -> Result<Message, ApiError> {
+    let message = repo::messages::expect(&state.db.read, &state.config, id).await?;
+    // The same send can't land in two rooms. An app that reuses a key for a
+    // post somewhere else is broken, and the message from the other room is
+    // not the answer to this one.
+    if message.room_id != room_id {
+        return Err(ApiError::conflict(
+            "That send was already posted in another conversation.",
+        ));
+    }
+    Ok(message)
 }
 
 /// A message may only carry uploads that finished, that this person uploaded,
@@ -281,7 +338,12 @@ async fn edit(
 
     // An edit that takes a link out takes its card out of the collection too.
     // The archive follows what the message says now, not what it once said.
-    repo::links::replace_for_message(&state.db.write, id, &crate::links::extract(&body)).await?;
+    repo::links::replace_for_message(
+        &mut *state.db.write.acquire().await?,
+        id,
+        &crate::links::extract(&body),
+    )
+    .await?;
 
     let message = repo::messages::expect(&state.db.read, &state.config, id).await?;
     state
@@ -549,7 +611,7 @@ async fn put_read_marker(
     if message.room_id != room_id {
         return Err(ApiError::validation("That message isn't in that room."));
     }
-    advance_read_marker(&state, auth.id, room_id, req.last_read_id).await?;
+    advance_read_marker(&state.db.write, auth.id, room_id, req.last_read_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -560,8 +622,11 @@ async fn put_read_marker(
 /// back with an older position must not pull back what the desktop has
 /// already read (#454). Message ids are UUIDv7, and SQLite compares blobs
 /// byte by byte, so `>` on the column is "posted later".
-pub(crate) async fn advance_read_marker(
-    state: &AppState,
+///
+/// Takes the write pool, or the transaction a post is written in, so a
+/// message and its sender's marker are saved together (#524).
+pub(crate) async fn advance_read_marker<'e>(
+    db: impl sqlx::SqliteExecutor<'e>,
     user_id: UserId,
     room_id: RoomId,
     message_id: MessageId,
@@ -577,7 +642,7 @@ pub(crate) async fn advance_read_marker(
     .bind(room_id.to_vec())
     .bind(message_id.to_vec())
     .bind(now_ms())
-    .execute(&state.db.write)
+    .execute(db)
     .await?;
     Ok(())
 }
