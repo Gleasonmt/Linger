@@ -328,6 +328,29 @@ gradient at 92°, and shimmer or glow.
   moves out by `--name-glow-reach` (twice `--name-glow`, past which the light
   has faded) and a negative margin of the same takes it back, so no word
   moves.
+- **Shimmer** is a band of `--name-shimmer` crossing the letters every 4s,
+  a quarter of the name wide, and it costs the page nothing per frame
+  (#532). It is not a background moved by `background-position`, which no
+  engine can move by itself: that made every member's app restyle and
+  repaint a shimmering name 60 times a second wherever it showed. A window
+  slides across the name by `transform` alone, with a copy of the letters
+  inside sliding back by the same amount, so the compositor (on the GPU
+  where there is one) moves the band and the letters are drawn once. The
+  copy lies on the letters exactly, in every face and size: in a box of the
+  name's own size, cut where the name is cut and with the same "…"; inside
+  a sentence, on the sentence's baseline, from a zero-width spot at the end
+  of the name (a sentence cut inside the name drops the band rather than
+  light letters under its "…", and a shimmering name stays on one line).
+  A shimmering name's letters keep their direction to themselves, so a name
+  that turns text around (#488) still has the light on its letters.
+  The copy is generated content in an `aria-hidden` element, so it is never
+  selected, copied or read out. No band with plain names, reduced motion,
+  high contrast or the lights off. Measured with one shimmering name in the
+  list: 6% of a core became 3% in Chromium (WebView2's engine) drawing
+  without the GPU, and in the Linux release app 12% became 9% on a 60 Hz
+  screen and 16% became 8% on a 165 Hz one. What the Linux app still spends
+  goes on showing a new frame of the window every refresh, which anything
+  that moves costs there.
 - **`raw`** draws the person's own style even with plain names on, for the
   style picker's preview.
 - **`dim`** draws the name in `--text-offline`, a dim neutral grey, with
@@ -1039,6 +1062,7 @@ it catches, and nowhere else (AGENTS.md hard rule 4).
 | The message box's `@` list: who it offers and in what order, the keys, Enter never sending, an input method left alone, the combobox and listbox, and mentions read by name | `core/chat/mentions.test.ts`, `next-chat-parity.spec.ts` › mentioning somebody by the name you know |
 | An inline name never makes its line taller | `kit.spec.ts` › a name inside a sentence sits on the sentence's own lines |
 | A name with a character that turns text around in it leaves the words after it the right way round, read letter by letter as drawn, and a row's title, note, second line and name are isolated; a file named `invoice` + U+202E + `fdp.exe` shows "invoicefdp.exe" on its card, isolated, and in Media and Search; a message ending in U+202E leaves its "edited" the right way round (#488) | `kit.spec.ts` › a name that turns text around; `next-chat.spec.ts` › a name with a character that turns text around, words ending in a character that turns text around; `lib/media.test.ts`, `core/search.test.ts` |
+| A shimmering name moves only by `transform` (a window and its copy of the letters, in step, forever, nothing on the name itself), and in Chromium the page does no style work per frame; the copy lies on the letters in every face and size, cut short with "…", inside a sentence and in a name that turns text around (#488), at 100% and 200%; it's never selected, copied or read out; no band with plain names or reduced motion (#532) | `next-name-shimmer.spec.ts` |
 | A name reads the same in a message and on its card: the same colors letter by letter and the same glow for its size, sampled from screenshots, for a solid color, a gradient, glow and shimmer (one caught mid-band too); the card's own surface behind it, at 4.5:1; a name's box no wider than its letters; the glow gone with plain names and in high contrast | `next-name-paint.spec.ts` |
 | A glowing name's light fades out past its box in a list row, a voice chip in the list, a reply's quote, the reply line and the typing line, with no step at the box's edges (sampled from screenshots), and in a row and a chip its rings match the person card's; in the chat window's voice strip it fades out across the chip and stays inside the chip above and below; a long glowing name in a row still ends in its own "…", and long lines still end in "…", with no letter past their box; rows, chips, lines and names sit exactly where they did when those parts cut on every side, at 100% and 200% and at the chat window's narrowest (420) and a conversation window's (360), where the strip hides the chips that don't fit; plain names, reduced motion and high contrast leave no light past the box | `next-name-glow.spec.ts` | `next-name-glow.spec.ts` |
 | An offline person's name in the list is `--text-offline` with no gradient, glow, shadow or shimmer, for a solid color, a gradient, glow and shimmer, and every pixel in and beside it grey in a screenshot; an idle or away name too, glow and all, with an away message still warm (#301); somebody here keeps their look; going idle, away or offline and coming back (around, in a room) switches both ways in the same face; plain names and high contrast (`GrayText`); offline rows 48px with names on the others' edge and line, at 100% and 200% | `next-offline-names.spec.ts` |

@@ -30,9 +30,29 @@ export type NameSize = "meta" | "control" | "body" | "name" | "display" | "inlin
  */
 export function Name({ person, size = "name", raw = false, dim = false }: { person: User; size?: NameSize; raw?: boolean; dim?: boolean }) {
   const props = nameProps(person, raw ? "k-name name-raw" : "k-name");
+  const shimmer = props["data-name-effect"] === "shimmer" && !dim;
   return (
     <span {...props} data-kit="Name" data-size={size} data-dim={dim ? "yes" : undefined}>
-      {person.display_name}
+      {/* A shimmering name's letters keep their direction to themselves, so a
+          character in it that turns text around can't move the band's place
+          after them (#488, #532). */}
+      {shimmer ? <span className="k-name-letters">{person.display_name}</span> : person.display_name}
+      {shimmer ? <ShimmerBand key={person.display_name} letters={person.display_name} /> : null}
+    </span>
+  );
+}
+
+/**
+ * The shimmer's moving band (#532, `Name.css`): where it lives, the window
+ * that slides across the name, and in it a copy of the letters drawn from
+ * `data-letters`, so the copy is never selected, copied or read out. Its
+ * caller keys it by the letters, so a new name starts the window and its copy
+ * again together: they move in step only because they started together.
+ */
+function ShimmerBand({ letters }: { letters: string }) {
+  return (
+    <span className="k-name-band-place" aria-hidden="true">
+      <span className="k-name-band" data-letters={letters} />
     </span>
   );
 }
