@@ -648,6 +648,8 @@ impl Gateway {
 
     /// Set somebody's presence state and away message. Room membership only
     /// changes via `room.focus`, so it is carried over from the existing entry.
+    /// The away message loses the characters that turn text around, as a saved
+    /// one does (#488): it's drawn beside the person's name.
     fn apply_presence(
         &self,
         user_id: UserId,
@@ -660,7 +662,9 @@ impl Gateway {
             user_id,
             state,
             room_id,
-            away_message,
+            away_message: away_message
+                .as_deref()
+                .map(crate::validate::without_direction_overrides),
         };
         self.presence.insert(user_id, entry.clone());
         entry
@@ -669,12 +673,20 @@ impl Gateway {
     /// Apply a client `presence.update`, answering whether it changed
     /// anything. Saying the same thing again tells nobody anything new, so
     /// nobody is told it (#497).
+    ///
+    /// The away message is compared as it is held, without the characters
+    /// that turn text around (#488). Compared as sent, one carrying an
+    /// override would never equal the stored one, and every repeat would
+    /// count as a change and spend the person's `RATE_PRESENCE`.
     fn update_presence(
         &self,
         user_id: UserId,
         state: PresenceState,
         away_message: Option<String>,
     ) -> bool {
+        let away_message = away_message
+            .as_deref()
+            .map(crate::validate::without_direction_overrides);
         let same = self
             .presence
             .get(&user_id)

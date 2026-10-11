@@ -353,6 +353,12 @@ async fn handle_client_frame(
             // until it changes. Ignored rather than refused, like any client
             // frame that doesn't fit, and ignored whole: the state it came
             // with doesn't change either, so nobody is told half of it.
+            // Counted without the characters that turn text around (#488),
+            // which come out first, as `PATCH /me` takes them out before it
+            // counts.
+            let away_message = away_message
+                .as_deref()
+                .map(validate::without_direction_overrides);
             if away_message
                 .as_deref()
                 .is_some_and(|message| validate::away_message(message).is_err())
