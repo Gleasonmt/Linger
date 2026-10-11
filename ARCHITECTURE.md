@@ -888,7 +888,12 @@ machine. `off`, or no domain to look up, and the server carries no voice (#306).
 
 The image starts as root only to give the data folder to its `linger` user, then runs the
 server as `linger` (`deploy/entrypoint.sh`, #440): Docker makes a missing `./data` for
-root, which used to need a `chown` before the first start.
+root, which used to need a `chown` before the first start. It also makes the folder 0700
+and runs the server with umask 077, so what the server writes is 0600 (#506): on a
+machine with more than one account, the others can't read the database or the files.
+Nothing on the host reads inside it: `update.sh` copies the database out through a
+one-off container of the image and writes the backup 0600, so a host needs Docker and
+not root.
 
 The image sets `MALLOC_MMAP_THRESHOLD_=1048576` (#523), so memory a password hash used goes
 back to the system. Each argon2 hash borrows about 19 MB at once (§7). glibc, the C
