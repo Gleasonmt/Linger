@@ -1685,6 +1685,7 @@ dependencies = [
  "hex",
  "image",
  "infer",
+ "jiff",
  "jsonwebtoken",
  "linger-core",
  "linger-sfu",

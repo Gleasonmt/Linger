@@ -497,6 +497,10 @@ impl ObjectStore for NeverDeletes {
     async fn discard(&self, upload_id: UploadId) -> anyhow::Result<()> {
         self.0.discard(upload_id).await
     }
+
+    async fn last_received(&self, upload_id: UploadId) -> anyhow::Result<Option<i64>> {
+        self.0.last_received(upload_id).await
+    }
 }
 
 /// A store that stops answering must not hold up the delete. The app gives up
