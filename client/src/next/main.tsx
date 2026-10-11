@@ -17,6 +17,7 @@ import { followMediaKeys } from "../lib/mediaKeys";
 import { setNoNotifications } from "../lib/notify";
 import { type DeviceSound, followDeviceSound, unlockAudioOnGesture } from "../lib/sound";
 import { App } from "./app/App";
+import { WindowBoundary } from "./app/Boundary";
 
 // Plain names and interface size, the same in every window
 // (core/appearance.ts).
@@ -66,9 +67,13 @@ followMediaKeys("mediaSession" in navigator ? navigator.mediaSession : undefined
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
+// A window that can't be drawn says so and offers Reload, rather than going
+// blank; each pane inside has a boundary of its own first (#509).
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <WindowBoundary>
+      <App />
+    </WindowBoundary>
   </StrictMode>,
 );
 
