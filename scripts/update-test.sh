@@ -231,6 +231,7 @@ echo sha256:next >"$FAKE/remote_image"
 run
 check "a relay without the peer rule updates" test "$code" -eq 0
 check "it warns about the relay" has "not just to voice (#501)"
+check "it says to open the relay's wider range first (#197)" has "open UDP 49160 to 49359"
 check "it says how to get the release's compose.yaml" \
   has "curl -fLO https://raw.githubusercontent.com/itsMattGuenther/Linger/v0.4.11/deploy/compose.yaml"
 check "never main's, which can be ahead of the release" lacks "Linger/main/deploy"

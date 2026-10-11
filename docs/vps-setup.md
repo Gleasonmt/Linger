@@ -76,7 +76,7 @@ outbound allowances for TCP, UDP and ICMP.
 | Voice | UDP | `3479` | All IPv4 |
 | Voice relay, only if you run it | TCP | `3478` | All IPv4 |
 | Voice relay, only if you run it | UDP | `3478` | All IPv4 |
-| Voice relay's audio, only if you run it | UDP | `49160-49200` | All IPv4 |
+| Voice relay's audio, only if you run it | UDP | `49160-49359` | All IPv4 |
 
 Without UDP `3479`, text chat works and nobody in voice hears anybody. The
 relay is optional, for friends on networks that block it

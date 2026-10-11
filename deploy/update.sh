@@ -264,7 +264,8 @@ if ((${#profiles[@]})) && ! grep -q -- '--denied-peer-ip' compose.yaml; then
   say
   say "Warning: the voice relay this compose.yaml runs will carry a member's traffic to other"
   say "machines this server can reach, not just to voice (#501). A newer compose.yaml keeps it"
-  say "to voice."
+  say "to voice. Its relay uses more ports: before you get it, open UDP 49160 to 49359 in your"
+  say "provider's firewall and on this server (it was 49160 to 49200), and forward them at home."
   if ! grep -q '^ *env_file: .env' compose.yaml; then
     say "This one has your settings written into it, so they move to .env first. The host guide"
     say "says how: https://github.com/itsMattGuenther/Linger/blob/main/docs/host-guide.md#updating-the-server"
