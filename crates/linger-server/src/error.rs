@@ -92,6 +92,17 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, ErrorCode::Conflict, message)
     }
 
+    /// Somebody here already goes by a name that looks like the one asked for
+    /// (#574, `names`). It says nothing about who: the person will see the
+    /// list once they're in, and a sign-up form is no place to learn it.
+    pub fn display_name_taken() -> Self {
+        Self::new(
+            StatusCode::CONFLICT,
+            ErrorCode::DisplayNameTaken,
+            "Someone here already goes by a name that looks like that. Try something a little different.",
+        )
+    }
+
     pub fn rate_limited(retry_after_ms: u64) -> Self {
         Self::rate_limited_with(retry_after_ms, "Slow down a little.")
     }

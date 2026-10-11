@@ -17,7 +17,8 @@
  * to; `?revoked` has The Good Company refuse its saved sign-in (with `?one`,
  * that leaves nothing signed in). The sign-in routes take any username;
  * the password `wrong` is refused, invite `DEAD` and setup token `used` are
- * spent, and `nowhere.example` doesn't answer. The usernames `crowd`,
+ * spent, joining as "Matt" in any capitals is refused as a look-alike (#574),
+ * and `nowhere.example` doesn't answer. The usernames `crowd`,
  * `guesser` and `busy` meet the server's limits (#538): a network out of
  * sign-ups for now, one out of sign-in tries, and a server busy checking
  * passwords. `?hold` keeps the health
@@ -502,6 +503,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     if (body.username === "crowd") return refuse(429, "RATE_LIMITED", SIGNUPS_PAUSED, 599_990);
     if (body.username === "guesser") return refuse(429, "RATE_LIMITED", SIGN_INS_PAUSED, 11_250);
     if (body.username === "busy") return refuse(429, "RATE_LIMITED", SERVER_BUSY, 5_000);
+    // Joining as somebody already here, in other capitals: the server's look-alike refusal (#574).
+    if (path === "/auth/register" && typeof body.display_name === "string" && body.display_name.toLowerCase() === state.me?.display_name.toLowerCase()) {
+      return refuse(409, "DISPLAY_NAME_TAKEN", "Someone here already goes by a name that looks like that. Try something a little different.");
+    }
     return signedIn();
   }
   if (path === "/read") return json(state.read);
