@@ -468,9 +468,9 @@ impl ObjectStore for NeverDeletes {
         &self,
         upload_id: UploadId,
         parts: Option<&[CompletedPart]>,
-        expected_parts: u32,
+        size_bytes: u64,
     ) -> anyhow::Result<Staged> {
-        self.0.assemble(upload_id, parts, expected_parts).await
+        self.0.assemble(upload_id, parts, size_bytes).await
     }
 
     async fn put_object(
