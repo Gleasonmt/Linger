@@ -159,12 +159,20 @@ does losing audio twice, and the first recording is kept
 
 1. Re-run the failed job once, to be sure it is random and not your change.
 2. Open an issue the same day with the test's name, the run, and the error.
-3. Fix whichever is wrong. Fixtures deliver events explicitly and in order;
+3. Make it fail on purpose before changing anything, by squeezing it: the
+   tests, the page server and the browser on two CPUs, several copies at once.
+   `taskset -c 0,1 pnpm exec playwright test <file> -g <name>
+   --repeat-each=8 --workers=4` in Chromium;
+   `LINGER_WEBKIT_CPUS=0,1 taskset -c 0,1 scripts/webkit.sh <file> -g <name>
+   --repeat-each=8 --workers=4` in WebKit, whose browser is in a container
+   `taskset` can't reach. A fix that turns 8 failures in 8 into 8 passes is
+   proof; a pass on an idle machine isn't.
+4. Fix whichever is wrong. Fixtures deliver events explicitly and in order;
    a test waits for the thing itself, never for a fixed time. A test that
    takes over 15 seconds on CI (half the usual limit) is one busy runner away
    from failing: split it, or mark it `test.slow()` if it is long by design
    (#328).
-4. If it can't be fixed that day and it is failing other people's pull
+5. If it can't be fixed that day and it is failing other people's pull
    requests, mark it `test.fixme` with the issue number, so it stops blocking
    them. The issue stays open until the test is back.
 
@@ -212,8 +220,15 @@ rules that came out of them:
   not the test.** Chromium drops every request in flight when a network
   interface comes or goes, and Docker adds one each time it starts a container
   on its own network (a VPN or Wi-Fi change does the same). Don't start
-  containers while the Chromium tests run. `webkit.sh`'s container shares the
-  machine's network and adds nothing.
+  containers while the Chromium tests run. `check.sh`'s own containers add
+  nothing: actionlint runs with no network, and `webkit.sh`'s container shares
+  the machine's. Until #528, actionlint ran on Docker's network, so every
+  `check.sh` that started blanked pages in any other `check.sh` already
+  running its browser tests: 4 of 96 sign-in tests failed beside one
+  container a second, and none beside the same container with no network.
+  The relay and server-image checks (`coturn-test.sh`,
+  `image-start-test.sh`) need a network, so don't run them beside a browser
+  run.
 
 ## Browser tests
 
