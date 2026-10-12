@@ -1,11 +1,12 @@
 //! "Open in Linger" (#607): the invite page's button is a `linger://` link,
 //! and the computer hands it to Linger.
 //!
-//! Two shapes, carrying only a server and the code or token (PROTOCOL §2.2):
+//! Three shapes, carrying only a server and the code or token (PROTOCOL §2.2):
 //!
 //! ```text
 //! linger://invite?server=linger.example&code=CODE
 //! linger://setup?server=linger.example&token=TOKEN
+//! linger://sign-in?server=linger.example&code=CODE    (#581)
 //! ```
 //!
 //! The link comes from outside the app: any web page can point a browser at
@@ -77,7 +78,7 @@ pub fn link_offered(offered: tauri::State<'_, Offered>) -> Option<String> {
 const MOST: usize = 1024;
 
 /// A `linger://` link as the link a person would paste, or `None` for
-/// anything that isn't exactly one of the two shapes.
+/// anything that isn't exactly one of the three shapes.
 #[must_use]
 pub fn pasted_link(raw: &str) -> Option<String> {
     if raw.len() > MOST {
@@ -95,7 +96,7 @@ pub fn pasted_link(raw: &str) -> Option<String> {
     }
     let kind = url.host_str()?;
     let (key, valid): (&str, fn(&str) -> bool) = match kind {
-        "invite" => ("code", is_code),
+        "invite" | "sign-in" => ("code", is_code),
         "setup" => ("token", is_token),
         _ => return None,
     };
@@ -120,6 +121,7 @@ pub fn pasted_link(raw: &str) -> Option<String> {
     }
     Some(match kind {
         "invite" => format!("{origin}/invite/{secret}"),
+        "sign-in" => format!("{origin}/sign-in/{secret}"),
         _ => format!("{origin}/setup?token={secret}"),
     })
 }
@@ -170,7 +172,8 @@ fn is_host(host: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
-/// An invite code: letters and digits (the server makes lowercase base32).
+/// An invite or sign-in link code: letters and digits (the server makes
+/// lowercase base32).
 fn is_code(code: &str) -> bool {
     (1..=64).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_alphanumeric())
 }
@@ -220,6 +223,21 @@ mod tests {
     }
 
     #[test]
+    fn a_sign_in_link_becomes_the_link_a_person_would_paste() {
+        // Exactly as the sign-in link page writes it (`routes/pages.rs`, `app_link`).
+        assert_eq!(
+            pasted_link("linger://sign-in?server=linger.example&code=fbv42riq4hxs7oec3d2nkmjx63")
+                .as_deref(),
+            Some("https://linger.example/sign-in/fbv42riq4hxs7oec3d2nkmjx63")
+        );
+        assert_eq!(
+            pasted_link("linger://sign-in?server=linger.example&token=0123abcdef"),
+            None,
+            "a sign-in link takes a code, not a token"
+        );
+    }
+
+    #[test]
     fn a_setup_link_keeps_its_token() {
         assert_eq!(
             pasted_link("linger://setup?server=linger.example&token=0123abcdef").as_deref(),
@@ -237,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn anything_but_the_two_shapes_is_dropped() {
+    fn anything_but_the_three_shapes_is_dropped() {
         for raw in [
             "",
             "linger://",

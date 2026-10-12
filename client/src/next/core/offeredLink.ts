@@ -19,14 +19,14 @@ export interface Offered {
 }
 
 /**
- * Only an invite or a setup link: that's all an invite page sends. Read the
- * way the paste box reads it (`lib/link.ts`), as a second check on what the
- * shell already checked.
+ * Only an invite, a setup or a sign-in link (#581): that's all a link page
+ * sends. Read the way the paste box reads it (`lib/link.ts`), as a second
+ * check on what the shell already checked.
  */
 export function offerable(link: string | null | undefined): string | null {
   if (typeof link !== "string" || link === "") return null;
   const read = parsePastedLink(link);
-  return read !== null && (read.kind === "invite" || read.kind === "setup") ? link : null;
+  return read !== null && (read.kind === "invite" || read.kind === "setup" || read.kind === "signin") ? link : null;
 }
 
 /**

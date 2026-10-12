@@ -710,6 +710,36 @@ test.describe("hosting", () => {
     await expect(members.filter({ hasText: "Rory" })).toHaveCount(1);
   });
 
+  test("a sign-in link asks first, then shows the link, copied, and how long it works (#581)", async ({ page }) => {
+    // The host's view. Only the host gets the block: next-settings-window.spec.ts
+    // checks that a co-host doesn't.
+    await open(page, "?section=people");
+    const block = page.getByRole("region", { name: "Sign-in Links" });
+    const who = block.getByRole("combobox", { name: "For" });
+    const make = block.getByRole("button", { name: "Make a sign-in link" });
+    await expect(make).toBeDisabled();
+    // Never for yourself or the host: neither is offered.
+    const offered = await who.locator("option").allTextContents();
+    expect(offered[0]).toBe("Choose somebody");
+    expect(offered).toContain("Callie (@callie)");
+    expect(offered.some((label) => label.includes("@matt"))).toBe(false);
+    await who.selectOption({ label: "Callie (@callie)" });
+    await make.click();
+    await expect(page.getByRole("group", { name: /^Make a sign-in link for Callie\?/ })).toBeVisible();
+    await page.getByRole("button", { name: "Make and copy" }).click();
+    const made = block.locator("[data-sign-in-link]");
+    await expect(made).toContainText("/sign-in/k7q2xw3mfz9ab4cd5ef6gh7ij2");
+    await expect(made).toContainText(/Copied\. Send it to Callie yourself\. It works once, and runs out tomorrow at .+\. Making another cancels this one\./);
+    await expect(made.getByRole("button", { name: "Copied" })).toBeVisible();
+    const callie = await who.inputValue();
+    expect(await did(page)).toContain(`sign-in-link:${callie}`);
+  });
+
+  test("your account says when somebody made you a sign-in link (#581)", async ({ page }) => {
+    await open(page, "?section=account&signinlink");
+    await expect(page.getByRole("region", { name: "Password" })).toContainText("Matt made you a sign-in link yesterday. It was used yesterday to set a new password.");
+  });
+
   test("the server's name and accent save together; no accent is a choice too", async ({ page }) => {
     await open(page, "?section=server");
     const save = page.getByRole("button", { name: "Save", exact: true });

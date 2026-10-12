@@ -1,7 +1,8 @@
 //! The pages a shared link opens in a browser (PROTOCOL §2.2, #578).
 //!
-//! An invite link (`/invite/CODE`) and the first-run setup link
-//! (`/setup?token=…`) are made to be pasted into the app. People tap links,
+//! An invite link (`/invite/CODE`), the first-run setup link
+//! (`/setup?token=…`) and a sign-in link (`/sign-in/CODE`, #581) are made to
+//! be pasted into the app. People tap links,
 //! though, so a friend's first minute used to be a blank 404. These answer
 //! with one small page: what the link is for, where to get the app, and the
 //! link again with a Copy button.
@@ -47,6 +48,8 @@ pub fn router() -> Router<AppState> {
         .route("/invite/{code}", get(invite_by_path))
         .route("/setup", get(setup_by_query))
         .route("/setup/{token}", get(setup_by_path))
+        .route("/sign-in", get(sign_in_by_query))
+        .route("/sign-in/{code}", get(sign_in_by_path))
 }
 
 #[derive(serde::Deserialize)]
@@ -73,6 +76,22 @@ async fn invite_by_query(
     Query(query): Query<InviteQuery>,
 ) -> Result<Response, ApiError> {
     invite_page(&state, &headers, query.code.as_deref().unwrap_or_default()).await
+}
+
+async fn sign_in_by_path(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(code): Path<String>,
+) -> Result<Response, ApiError> {
+    sign_in_page(&state, &headers, &code).await
+}
+
+async fn sign_in_by_query(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<InviteQuery>,
+) -> Result<Response, ApiError> {
+    sign_in_page(&state, &headers, query.code.as_deref().unwrap_or_default()).await
 }
 
 async fn setup_by_path(
@@ -180,6 +199,7 @@ async fn invite_page(
                     steps(
                         &link,
                         &open,
+                        "Make your account",
                         "Pick a username, the name people will see, and a password. \
                          They\u{2019}re new, just for this server.",
                     )
@@ -194,6 +214,69 @@ async fn invite_page(
             "This invite doesn\u{2019}t work",
             "It may have been used already, or taken back. Ask whoever sent it \
              for a new one.",
+        ),
+    };
+    Ok(page.into_response())
+}
+
+/// A sign-in link (#581): somebody's way back in after forgetting their
+/// password. It says whose account it is and who made it; the password is
+/// only ever chosen in the app.
+async fn sign_in_page(
+    state: &AppState,
+    headers: &HeaderMap,
+    code: &str,
+) -> Result<Response, ApiError> {
+    let code = code.trim().to_lowercase();
+    let now = now_ms();
+    let link_state = if is_invite_code(&code) {
+        super::sign_in_links::link_state(&state.db.read, &code, now).await?
+    } else {
+        super::sign_in_links::LinkState::Dead
+    };
+    let page = match link_state {
+        super::sign_in_links::LinkState::Open(open) => {
+            let server_name: Option<String> =
+                sqlx::query_scalar("SELECT value FROM server_config WHERE key = 'name'")
+                    .fetch_optional(&state.db.read)
+                    .await?;
+            let server_name = server_name.unwrap_or_else(|| "a Linger server".into());
+            let origin = link_origin(state, headers);
+            let link = format!("{origin}/sign-in/{code}");
+            let in_app = app_link("sign-in", &origin, "code", &code);
+            let lede = format!(
+                "{} made this link so @{} can choose a new password. It works once. {}",
+                open.made_by,
+                open.username,
+                runs_out_in(open.expires_at - now)
+            );
+            Page {
+                status: StatusCode::OK,
+                title: format!("Get back into {server_name}"),
+                heading: format!("Get back into <bdi>{}</bdi>", escape(&server_name)),
+                body: format!(
+                    "<p class=\"lede\">{}</p>\
+                     <p class=\"warning\"><strong>Don\u{2019}t share this link.</strong> \
+                     Whoever uses it can sign in as @{}.</p>{}",
+                    escape(&lede),
+                    escape(&open.username),
+                    steps(
+                        &link,
+                        &in_app,
+                        "Choose a new password",
+                        "Then you\u{2019}re in. Anywhere else you were signed in gets \
+                         signed out, so sign in there with the new password.",
+                    )
+                ),
+            }
+        }
+        super::sign_in_links::LinkState::Used => dead_end(
+            "This sign-in link has been used",
+            "It works once. If that wasn\u{2019}t you, ask the host for a new one.",
+        ),
+        super::sign_in_links::LinkState::Dead => dead_end(
+            "This sign-in link doesn\u{2019}t work",
+            "It may have run out, or the host made a newer one. Ask them for a new one.",
         ),
     };
     Ok(page.into_response())
@@ -228,6 +311,7 @@ fn setup_page(state: &AppState, headers: &HeaderMap, token: &str) -> Response {
                 steps(
                     &link,
                     &open,
+                    "Make your account",
                     "Name the server, then pick your username, the name people will \
                      see, and a password. You\u{2019}re the host.",
                 )
@@ -324,9 +408,10 @@ fn query_value(text: &str) -> String {
 
 /// The three steps: get the app, paste the link (or open it in Linger), finish
 /// in the app.
-fn steps(link: &str, open: &str, last: &str) -> String {
+fn steps(link: &str, open: &str, last_heading: &str, last: &str) -> String {
     let link = escape(link);
     let open = escape(open);
+    let last_heading = escape(last_heading);
     let last = escape(last);
     format!(
         "<ol class=\"steps\">\
@@ -350,7 +435,7 @@ fn steps(link: &str, open: &str, last: &str) -> String {
              <p class=\"open\"><span>Already have Linger?</span> \
                <a class=\"open-app\" href=\"{open}\">Open in Linger</a></p>\
              <p class=\"muted\">Nothing happened? Paste the link instead.</p></li>\
-           <li><h2>Make your account</h2><p>{last}</p></li>\
+           <li><h2>{last_heading}</h2><p>{last}</p></li>\
          </ol>"
     )
 }
@@ -520,6 +605,10 @@ mod tests {
         assert_eq!(
             app_link("setup", "http://127.0.0.1:8420", "token", "0a1b"),
             "linger://setup?server=http%3A%2F%2F127.0.0.1%3A8420&token=0a1b"
+        );
+        assert_eq!(
+            app_link("sign-in", "https://linger.example", "code", "abcd2345"),
+            "linger://sign-in?server=linger.example&code=abcd2345"
         );
         assert_eq!(query_value("[::1]:8420"), "%5B%3A%3A1%5D%3A8420");
         assert_eq!(query_value("a&b=c#d"), "a%26b%3Dc%23d");

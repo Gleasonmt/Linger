@@ -27,6 +27,7 @@ describe("a link an invite page sent (#607)", () => {
     expect(offerable("https://linger.example/invite/abcd2345")).toBe("https://linger.example/invite/abcd2345");
     expect(offerable("https://linger.example/setup?token=0123abcd")).toBe("https://linger.example/setup?token=0123abcd");
     expect(offerable("http://localhost:8420/invite/abcd")).toBe("http://localhost:8420/invite/abcd");
+    expect(offerable("https://linger.example/sign-in/abcd2345")).toBe("https://linger.example/sign-in/abcd2345");
     for (const link of [null, undefined, "", "linger.example", "https://linger.example/", "https://linger.example/invite/", "not a link", "javascript:alert(1)"]) {
       expect(offerable(link)).toBeNull();
     }
