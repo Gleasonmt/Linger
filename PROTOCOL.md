@@ -865,6 +865,11 @@ them" (§8).
 whole object when present. `entrance_sound: ""` clears the sound (bundled keys are
 validated against `linger-core::ENTRANCE_SOUNDS` until custom uploads land in M4).
 
+A `status` that clears the away message the saved one had (from a message to `null` or
+`""`) also **ends away on every one of the person's gateway sessions** (#653, §8). A
+save that keeps the away, or sets one, leaves presence alone: setting away is the
+device's own `presence.update`.
+
 `time_zone` is "Show my local time" (#604, SPEC §4.6): a time-zone name turns it on or
 moves it, and `""` turns it off. Absent or `null` leaves it as it is, so an app from
 before it never turns it off by saving a status. The server checks the name's shape
@@ -1635,6 +1640,35 @@ newest, never dropped.
   where its last frame said, with one round of offers. A session that left or moved while
   it waited, and ends up back in the seat it had, still gets a fresh `voice.offer`: its
   app closed the old connection.
+
+**Each session speaks for itself** (#653). Somebody signed in on a phone and a computer
+is two sessions, and the server keeps what each one's `presence.update` and `room.focus`
+said apart. What everybody is told, in `presence.update`, `room.*` and every `ready`, is
+worked out from all of them, in this order:
+
+1. **Away** on any session is `away`, in no room, with the away message set most
+   recently.
+2. Otherwise, **in a room** on any session is `in_room`, in the room moved into most
+   recently.
+3. Otherwise, **around** on any session is `around`.
+4. Otherwise every session is idle, and so is the person: `idle`.
+
+With no session open they are `offline`. A frame changes only its own session's part.
+Moving ends that session's idle, but not its away, so a phone opening a room can't undo
+the away set on the computer. Away ends when the session that set it sends another
+state, or closes, or when a `PATCH /me` clears the away saved on the person's status
+(§5): that ends it on every session, so I'm back on the phone ends an away the computer
+set. The app saves the status before it sends its own frame, so with one device the
+frame that follows changes nothing and nobody is told twice. A session's part goes when its socket closes, and a resume starts it
+again as `around` in no room; the app says where it is again on every `ready` and
+`resumed`. A `presence.update` saying `in_room` or `offline` counts as `around`: where
+somebody is comes from `room.focus`, and offline from their last session closing.
+
+The frames are the same as with one session; only what goes in them is worked out
+differently. A change that moves somebody is told as a move (`room.leave`, `room.enter`,
+`room.occupancy`, then `presence.update`) under `RATE_ROOM_FOCUS`, whichever frame
+caused it: away on the computer takes them out of the room open on the phone. A change
+that tells everybody nothing new is told to nobody.
 
 ### Server → client
 
