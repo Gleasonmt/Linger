@@ -112,6 +112,7 @@ mod tests {
             }),
             reactions_off: Some(true),
             someone_left: None,
+            deleted_member_ids: Some(vec![UserId::new()]),
         }
     }
 
@@ -195,6 +196,7 @@ mod tests {
                 }]),
                 emoji: None,
                 reactions: Some(true),
+                deleted_users: Some(vec![UserId::new()]),
             }),
             ServerEvent::Resumed { replayed: 0 },
             ServerEvent::InvalidSession {
@@ -225,7 +227,10 @@ mod tests {
             },
             ServerEvent::RoomLeave { room_id, user_id },
             ServerEvent::UserUpdate(user(user_id)),
-            ServerEvent::UserRemove { user_id },
+            ServerEvent::UserRemove {
+                user_id,
+                deleted: Some(true),
+            },
             ServerEvent::RoomCreate(room(room_id, RoomKind::Dm)),
             ServerEvent::RoomUpdate(room(room_id, RoomKind::Room)),
             ServerEvent::DmRemove { room_id },
