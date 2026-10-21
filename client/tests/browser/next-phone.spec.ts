@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { finger, middle, noLongPress } from "./finger";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { finger, middle, noLongPress, spread } from "./finger";
 import { still } from "./still";
 
 // The phone app (SPEC §4.15): the same list window, opened as the phone's one
@@ -71,6 +71,15 @@ async function sticksOut(page: Page): Promise<string[]> {
       if (parked || ellipsis) continue;
       const name = [element.tagName.toLowerCase(), ...element.classList].join(".");
       out.push(`${name} ends at ${Math.round(box.right)}, past ${edge}: "${(element.textContent ?? "").trim().slice(0, 40)}"`);
+    }
+    // A box that scrolls sideways inside the screen is a conversation that
+    // drags sideways too (#688), though nothing in it passes the edge.
+    for (const element of document.body.querySelectorAll<HTMLElement>("*")) {
+      const style = getComputedStyle(element);
+      if (style.overflowX !== "auto" && style.overflowX !== "scroll") continue;
+      if (element.scrollWidth <= element.clientWidth + 1) continue;
+      const name = [element.tagName.toLowerCase(), ...element.classList].join(".");
+      out.push(`${name} scrolls sideways: ${element.scrollWidth} is wider than ${element.clientWidth}`);
     }
     return out;
   });
@@ -288,6 +297,198 @@ test("at the phone's largest text size, words fit their lines and nothing reache
     expect(await sticksOut(page), `Settings, ${name}`).toEqual([]);
     await settings.getByRole("button", { name: "Back to Settings" }).click();
   }
+});
+
+// The phone app doesn't zoom (#689): its text gets bigger by the phone's
+// text size, and a zoomed screen is only wider than the phone, dragging
+// sideways. The same limit stops an iPhone zooming in on a text box whose
+// words are under 16px when it gets the cursor, and not always zooming back
+// out: the conversation sat shifted left after typing (#688). Playwright's
+// WebKit doesn't do that zoom, so the viewport's words are the proof of it.
+// This is the app's own page, as the phone opens it, not a fixture.
+test.describe("the phone's page never zooms (#689, #688)", () => {
+  test.use({ isMobile: true, hasTouch: true });
+
+  test("its viewport forbids zoom, which also keeps an iPhone from zooming in on the message box", async ({ page }) => {
+    await page.goto("/next.html?shell=phone");
+    const content = (await page.locator("meta[name='viewport']").getAttribute("content")) ?? "";
+    const said = new Map(content.split(",").map((part): [string, string] => {
+      const [key = "", value = ""] = part.split("=").map((side) => side.trim());
+      return [key, value];
+    }));
+    expect(said.get("width")).toBe("device-width");
+    expect(Number(said.get("initial-scale"))).toBe(1);
+    expect(Number(said.get("maximum-scale"))).toBe(1);
+    expect(said.get("user-scalable")).toBe("no");
+    expect(said.get("viewport-fit")).toBe("cover");
+  });
+
+  test("two fingers spread apart zoom nothing", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "Only Chromium lets a test put two fingers down");
+    await page.goto("/next.html?shell=phone");
+    await expect(page.locator("#root *").first()).toBeVisible();
+    await spread(page, { x: 205, y: 450 });
+    // A pinch that zoomed would have the screen show part of the page,
+    // moved off its left edge (it reached 5 times, 2026-10-21).
+    const seen = await page.evaluate(() => ({ scale: window.visualViewport?.scale, left: window.visualViewport?.offsetLeft, width: window.visualViewport?.width }));
+    expect(seen).toEqual({ scale: 1, left: 0, width: 411 });
+  });
+});
+
+// The page never zooms, so a photo opened from a message zooms itself, as
+// a phone's own photo viewer does (core/zoom.ts): pinched, dragged, and
+// double-tapped in and out. A tap closes it only while it isn't zoomed.
+test.describe("a photo opened from a message zooms under your fingers (#689)", () => {
+  test.use({ isMobile: true, hasTouch: true });
+
+  /** A room with a photo 800×500 in it, opened in its viewer: the picture, and its size there. */
+  async function openPhoto(page: Page) {
+    await phone(page);
+    await room(page, "general").click();
+    await expect(page.getByRole("log")).toContainText("Putting it on now.");
+    await page.route("https://good-company.example/media/porch-zoom*", (route) =>
+      route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><rect width="800" height="500" fill="#445"/><rect x="380" y="230" width="40" height="40" fill="#ffcf7a"/></svg>' }),
+    );
+    await page.evaluate(() => {
+      const url = "/media/porch-zoom";
+      const attachment = { id: "a-porch", filename: "porch.png", mime: "image/png", size_bytes: 1_000, url, display_url: url, width: 800, height: 500, duration_ms: null, blurhash: null, poster_url: null, starred_at: null, uploader_id: "u-eli", created_at: Date.now() };
+      const d = { id: "m900002", room_id: "r-general", author_id: "u-eli", body: "the porch tonight", reply_to: null, attachments: [attachment], reactions: [], pinned_at: null, edited_at: null, deleted_at: null, created_at: new Date().toISOString() };
+      window.core?.frame("https://good-company.example", { op: "message.create", d } as never);
+    });
+    await page.getByRole("button", { name: "Open porch.png" }).tap();
+    const viewer = page.getByRole("dialog", { name: "porch.png" });
+    const picture = viewer.locator("img");
+    await expect.poll(() => picture.evaluate((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0)).toBe(true);
+    const opened = await picture.boundingBox();
+    if (!opened) throw new Error("no picture on the screen");
+    return { viewer, picture, opened };
+  }
+
+  /** How many times wider the picture is drawn than it opened, once it stops gliding. */
+  const zoomedBy = async (picture: Locator, opened: { width: number }) => ((await picture.boundingBox())?.width ?? 0) / opened.width;
+  const pageScale = (page: Page) => page.evaluate(() => window.visualViewport?.scale);
+  const doubleTap = async (page: Page, at: { x: number; y: number }) => {
+    await page.touchscreen.tap(at.x, at.y);
+    await page.touchscreen.tap(at.x, at.y);
+  };
+
+  test("two fingers zoom the photo and not the page, one drags it, and a tap while zoomed closes nothing", async ({ page, browserName }) => {
+    test.skip(browserName !== "chromium", "Only Chromium lets a test put two fingers down");
+    const { viewer, picture, opened } = await openPhoto(page);
+    const center = { x: opened.x + opened.width / 2, y: opened.y + opened.height / 2 };
+
+    // Spread six times apart: as far as it zooms, four times.
+    await spread(page, center);
+    await expect.poll(() => zoomedBy(picture, opened)).toBeCloseTo(4, 1);
+    expect(await pageScale(page)).toBe(1);
+    // What was between the fingers is still there: the middle of the picture.
+    const zoomed = await picture.boundingBox();
+    expect(Math.abs((zoomed?.x ?? 0) + (zoomed?.width ?? 0) / 2 - center.x)).toBeLessThan(2);
+
+    const hand = await finger(page);
+    await hand.down(center);
+    for (let step = 1; step <= 10; step += 1) await hand.move({ x: center.x - step * 10, y: center.y });
+    await hand.up();
+    await expect.poll(async () => (await picture.boundingBox())?.x).toBeCloseTo((zoomed?.x ?? 0) - 100, 0);
+
+    // A tap while looking around keeps the photo open.
+    await page.touchscreen.tap(center.x, center.y);
+    await page.waitForTimeout(600);
+    await expect(viewer).toBeVisible();
+    expect(await pageScale(page)).toBe(1);
+  });
+
+  test("a double tap zooms in on the photo and the next zooms back out; a tap then closes it", async ({ page }) => {
+    const { viewer, picture, opened } = await openPhoto(page);
+    const center = { x: opened.x + opened.width / 2, y: opened.y + opened.height / 2 };
+
+    await doubleTap(page, center);
+    await expect.poll(() => zoomedBy(picture, opened)).toBeCloseTo(2.5, 1);
+    await page.waitForTimeout(600);
+    await expect(viewer).toBeVisible();
+
+    await doubleTap(page, center);
+    await expect.poll(() => zoomedBy(picture, opened)).toBeCloseTo(1, 2);
+    await expect.poll(async () => (await picture.boundingBox())?.x).toBeCloseTo(opened.x, 0);
+    await expect(viewer).toBeVisible();
+
+    await page.touchscreen.tap(center.x, center.y);
+    await expect(viewer).toHaveCount(0);
+    expect(await pageScale(page)).toBe(1);
+  });
+});
+
+// The narrowest phones are 320 wide (#688). Nothing on the main screens may
+// reach past the edge there either, nor with the message box in use, since
+// testers saw the conversation drag sideways mostly after typing.
+test.describe("on a phone 320 wide, the narrowest (#688)", () => {
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  test("nothing reaches past the edge on the main screens, typing in the message box included", async ({ page }) => {
+    await phone(page);
+    expect(await sticksOut(page), "the list").toEqual([]);
+
+    await room(page, "general").click();
+    await expect(page.getByRole("log")).toContainText("Putting it on now.");
+    expect(await sticksOut(page), "a room").toEqual([]);
+
+    // A long message with a word that can't break, and a link.
+    const long = "Supercalifragilisticexpialidociousandthensomemorewithoutaspace, see https://example.com/a/very/long/link/that/never/breaks/anywhere";
+    await page.evaluate((body) => {
+      const d = { id: "m900001", room_id: "r-general", author_id: "u-eli", body, reply_to: null, attachments: [], reactions: [], pinned_at: null, edited_at: null, deleted_at: null, created_at: new Date().toISOString() };
+      window.core?.frame("https://good-company.example", { op: "message.create", d } as never);
+    }, long);
+    await expect(page.getByRole("log")).toContainText("Supercalifragilistic");
+    expect(await sticksOut(page), "a long message").toEqual([]);
+
+    const box = page.getByRole("combobox", { name: /^Message/ });
+    await box.click();
+    await expect(box).toBeFocused();
+    await box.pressSequentially("Running late, save me a seat https://example.com/a/very/long/link/that/never/breaks/anywhere/at/all");
+    expect(await sticksOut(page), "typing in the message box").toEqual([]);
+
+    // In voice: its controls in the room, then the bar on the list.
+    await page.getByRole("group", { name: "Voice in this conversation" }).getByRole("button", { name: "Join" }).click();
+    await expect(page.getByRole("group", { name: "Your voice" }).first()).toBeVisible();
+    expect(await sticksOut(page), "in voice").toEqual([]);
+    await back(page).click();
+    await expect(page.getByRole("region", { name: "In voice in #general" })).toBeVisible();
+    expect(await sticksOut(page), "the list, in voice").toEqual([]);
+
+    // Another room, with the line saying where your voice is.
+    await room(page, "weekend-plans").click();
+    await expect(screen(page).getByRole("group", { name: "Your voice call" })).toBeVisible();
+    expect(await sticksOut(page), "another room, in voice").toEqual([]);
+    await back(page).click();
+
+    await page.getByRole("list", { name: "People here" }).getByRole("button", { name: /^Jules/ }).first().click();
+    await expect(title(page)).toContainText("Jules");
+    expect(await sticksOut(page), "a DM").toEqual([]);
+    await back(page).click();
+
+    await list(page).getByRole("button", { name: "Media", exact: true }).click();
+    await expect(screen(page).locator(".nx-pane-other")).toBeVisible();
+    expect(await sticksOut(page), "Media").toEqual([]);
+    await back(page).click();
+
+    await list(page).getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("textbox", { name: "Search", exact: true }).fill("porch");
+    await expect(page.locator(".nx-hit-main").first()).toBeVisible();
+    expect(await sticksOut(page), "Search").toEqual([]);
+    await back(page).click();
+
+    await list(page).getByRole("button", { name: "Settings", exact: true }).click();
+    const settings = page.locator(".nx-phone-over [data-screen='settings']");
+    const sections = settings.getByRole("navigation", { name: "Settings" });
+    await expect(sections).toBeVisible();
+    expect(await sticksOut(page), "Settings").toEqual([]);
+    for (const name of (await sections.getByRole("tab").allTextContents()).map((one) => one.trim())) {
+      await sections.getByRole("tab", { name, exact: true }).click();
+      await expect(settings.locator(".nx-set-title")).toHaveText(name);
+      expect(await sticksOut(page), `Settings, ${name}`).toEqual([]);
+      await settings.getByRole("button", { name: "Back to Settings" }).click();
+    }
+  });
 });
 
 // Report and block on the phone (T-1605): there's no hovering for a
