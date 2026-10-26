@@ -364,6 +364,7 @@ That keeps working, and [Updating](#updating-the-server) says how to move them.)
 | `LINGER_POOL_BYTES` | Total storage the server will use. Write `250GB`, `500MB`, or a plain number. | `50GB` |
 | `LINGER_FILE_EXPIRY_DAYS` | When old files are deleted. `when-full` keeps them until the server needs the room: past 90% of `LINGER_POOL_BYTES`, the oldest go first until it's under 80%. A number of days deletes each file that long after it was shared, however much room there is. `off` keeps every sent file forever, and uploads are refused once it's full. Starred files, and files on pinned messages, never go. | `when-full` |
 | `LINGER_BACKUPS` | `off` stops the server's nightly copy of its database into `data/backups` ([Backups](#backups)). | on |
+| `LINGER_SCREENS` | `off` stops screen sharing in voice ([Shared screens](#shared-screens)). Voice carries on. | on |
 | `LINGER_BACKUP_S3_*` | A bucket each nightly copy is also sent to, so it survives the machine: `_BUCKET`, `_ACCESS_KEY_ID` and `_SECRET_ACCESS_KEY`, plus `_ENDPOINT`, `_REGION` and `_PATH_STYLE` as for files, and `_PREFIX` for where in the bucket. See [Sending the copies to a bucket](#sending-the-copies-to-a-bucket). | unset — copies stay on the machine |
 | `LINGER_MEDIA_DOMAIN` | The name files are served from. Set it if you are using two free names, or want something other than `cdn.` + your domain. It must be different from the main one. | `cdn.<your address>` |
 | `LINGER_STORAGE` | `local` keeps files on the machine. `s3` keeps them in a cloud bucket. | `local` |
@@ -467,6 +468,32 @@ gone.)
    home, forward it in the router too.
 2. `docker compose logs linger` says `voice goes to the address LINGER_DOMAIN
    points at` and `voice forwarding is on`.
+
+### Shared screens
+
+Anybody in a room's voice can share their screen (#360), and it goes through
+your server the same way: the person sharing sends it once, and your server
+sends a copy to each person watching. It needs nothing set up. It travels on
+the server's own address, the one the app already uses, so it doesn't need
+UDP 3479 and works through the proxy in front of the server.
+
+What it costs is upload: about 1.5 to 6 Mbps for each person watching, less
+for a still slide and more for a game at 60 frames a second. Eight people
+watching a presentation for an hour is roughly 7 GB of data out; a game shared
+at 60 frames a second to eight people is closer to 20 GB an hour. Your server
+holds every share to 10 Mbps whatever an app sends, and a room to three shares
+at once. The server passes the pictures on without opening them and keeps
+nothing; like voice, a host who changed the server could see them.
+
+It is light on the server itself. On the smallest DigitalOcean server (one
+CPU, 2 GB of memory), eight people watching a busy screen at 60 frames a
+second took the Linger server about 4% of the CPU and under 10 MB of memory,
+and Caddy about 10% for the HTTPS (2026-10-25, `scripts/screen-loop.mjs`).
+Upload is the limit, not the computer.
+
+To turn screen sharing off, put `LINGER_SCREENS=off` in `.env` and run
+`docker compose up -d`. Voice carries on as before; the apps stop offering
+Share and Watch.
 
 **Sending voice somewhere else.** If your name doesn't point straight at the
 server (behind Cloudflare's proxy, say, it points at Cloudflare, which can't

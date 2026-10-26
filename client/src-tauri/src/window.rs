@@ -450,9 +450,11 @@ pub fn on_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
         }
     }
-    // A voice message being recorded in a window that's gone goes with it (#401).
+    // A voice message being recorded in a window that's gone goes with it
+    // (#401), and so does a screen it was sharing (#360).
     if matches!(event, tauri::WindowEvent::Destroyed) {
         crate::clip::forget(window.app_handle(), window.label());
+        crate::screen_shell::forget(window.app_handle(), window.label());
         if let Ok(mut unseen) = UNSEEN.lock() {
             unseen.remove(window.label());
         }

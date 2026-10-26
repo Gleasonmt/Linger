@@ -57,6 +57,7 @@ import { PersonCard } from "../list/PersonCard";
 import { useHideReactions } from "../useHideReactions";
 import { hostOf, type ServerTagInfo, useServerInfos } from "../useServerInfos";
 import type { ChatPane } from "./ChatView";
+import { usePaneScreen } from "../screen/usePaneScreen";
 import type { ReactionKit } from "./Reactions";
 import { useFileDrafts } from "./useFileDrafts";
 import { useVoiceMessages } from "./useVoiceMessages";
@@ -128,6 +129,12 @@ export interface PaneHost {
    * an event on another server draws nothing here (#533).
    */
   among?: readonly string[];
+  /**
+   * A window with no voice bar of its own (a popped-out conversation): your
+   * share from it gets its box under the voice line (#360). Beside the list,
+   * the list's voice bar has it.
+   */
+  shareBox?: boolean;
 }
 
 export interface ConversationPane {
@@ -160,7 +167,7 @@ export interface ConversationPane {
  * name opens. The place that holds it decides which conversation shows and
  * what surrounds it.
  */
-export function useConversationPane({ apis, intend, active, find, show, firstSeed = null, firstMessage = null, voiceControl = askTheList, onTyped, among = NO_SERVERS }: PaneHost): ConversationPane {
+export function useConversationPane({ apis, intend, active, find, show, firstSeed = null, firstMessage = null, voiceControl = askTheList, onTyped, among = NO_SERVERS, shareBox = false }: PaneHost): ConversationPane {
   // A name in a conversation opens that person's card (PPL-6), the same card
   // the list shows, beside the name. Your own opens yours, as friends see it
   // (#271).
@@ -237,6 +244,16 @@ export function useConversationPane({ apis, intend, active, find, show, firstSee
   const roomId = active?.roomId ?? null;
   const room = state && roomId !== null ? conversationIn(state, roomId) : null;
   const paneId = active ? keyOf(active) : null;
+  // Screens shared in its voice (#360): the one shown above it, Watch, Share.
+  const screen = usePaneScreen({
+    server: active?.server ?? null,
+    api,
+    state,
+    roomId: room ? roomId : null,
+    intend,
+    screensOn: active ? infos[active.server]?.screens === true : false,
+    shareBox,
+  });
 
   const land = useLanding(api, roomId, state);
   const read = useReading(intend, active, state, land.ready);
@@ -380,6 +397,7 @@ export function useConversationPane({ apis, intend, active, find, show, firstSee
         // The host took us out of voice here (#423): the strip says so.
         takenOut: state.voiceTakenOut === room.id && state.myVoice?.roomId !== room.id,
       },
+      screen,
       people,
       gone,
       customEmoji: state.emoji,

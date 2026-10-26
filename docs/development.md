@@ -12,17 +12,21 @@ The desktop app needs system libraries: a webview, ALSA headers for the
 microphone, cmake for the bundled Opus codec, the GStreamer plugins for sound
 and for shared videos (libav decodes their AAC sound and H.264 picture; without
 it a video plays silent, or not at all, #358), and the appindicator library for the tray icon (without it the app runs, but
-closing the list quits instead of hiding it in the tray).
+closing the list quits instead of hiding it in the tray). Sharing a screen on
+Linux (#360) needs GStreamer's headers to build and its PipeWire plugin to run:
+the shell reads the screen the desktop's portal hands over and encodes it
+there (`src-tauri/src/screen_shell/linux.rs`).
 
 ```bash
 # Debian/Ubuntu
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev \
                  libayatana-appindicator3-dev librsvg2-dev libasound2-dev cmake \
                  gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio \
-                 gstreamer1.0-libav
+                 gstreamer1.0-libav gstreamer1.0-pipewire \
+                 libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
 # Arch
 sudo pacman -S webkit2gtk-4.1 gtk3 librsvg alsa-lib cmake gst-plugins-base gst-plugins-good \
-               gst-libav libayatana-appindicator
+               gst-libav gst-plugin-pipewire libayatana-appindicator
 ```
 
 The server needs one thing: ffmpeg, to take videos and sound files. It copies
@@ -178,6 +182,43 @@ LINGER_LOAD_SERVER=http://203.0.113.7:8420 LINGER_LOAD_SETUP=<token> \
 (60) and `LINGER_LOAD_OLD` (0, people on an app from before 0.4.9 sending
 silence) change the room. It can't see the server's CPU; watch that on the
 server itself (`top`) while it runs.
+
+### Screen sharing end to end
+
+`scripts/screen-loop.mjs` checks screen sharing (#360) the whole way through a
+real server: it builds and starts a throwaway `linger-server` on 127.0.0.1 with
+voice on, puts two people in a room's voice through real gateway sessions, and
+has one browser page share a screen that changes colour while another watches
+through the server, at 30 and at 60 frames a second. The pages are
+`client/tests/fixtures/screen-loop.html`, served by Vite. It passes when the
+watcher's colours follow the sharer's.
+
+```bash
+node scripts/screen-loop.mjs
+```
+
+To watch with WebKit as well, start Playwright's WebKit server the way
+`scripts/webkit.sh` does and give its address in `LINGER_WEBKIT_WS`. It can't
+use a real screen or a real Windows picker; that check is the real app.
+
+It can run against a test server of your own instead, over the internet and
+through its HTTPS proxy, which is how the numbers in `docs/host-guide.md`
+were measured. Never point it at a server people use: it makes accounts and
+a room there. Give it the address and the token from the server's setup link,
+and the host password to make (or, on a later run, the one it made):
+
+```bash
+LINGER_LOOP_SERVER=https://test.example LINGER_LOOP_SETUP=<token> \
+  LINGER_LOOP_PASSWORD=<a password> LINGER_LOOP_WATCHERS=8 node scripts/screen-loop.mjs
+```
+
+`LINGER_LOOP_WATCHERS` adds a load test after the colour checks: a busy 1080p
+screen at 60 frames a second, watched by that many people at once for
+`LINGER_LOOP_SECONDS` (30). The watchers past the first are screen sockets
+that only count what reaches them, so the server does the work it does for
+real people without a browser decoding every copy. It passes when every
+watcher gets as many frames as the best one. Run `docker stats` on the server
+meanwhile to see what it costs.
 
 ## How the desktop app starts on Linux
 

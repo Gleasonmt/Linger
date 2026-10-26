@@ -911,6 +911,66 @@ Matt cut it before it started: "it's antiquated. It doesn't apply anymore"
 (`docs/decisions.md`). What voice work built toward it stays as ordinary voice.
 The section as it stood that day is in [`docs/tasks/m13.md`](docs/tasks/m13.md).
 
+### M16 — screen sharing (#360): started 2026-10-25
+
+Matt took it off SPEC §2's anti-goals on 2026-10-25, cameras staying there, for a
+friend's presentation from Windows on 2026-10-28. SPEC §4.20 is what it does, PROTOCOL §8
+"Screen sharing" the screen socket, and `docs/decisions.md` why it travels on a WebSocket
+and not as a WebRTC track. Branch `feat/360-screen-sharing`. Numbers are `T-19xx`.
+
+- ✅ **T-1901 · Decided and written down** — Matt, 2026-10-25: 30 and 60 frames a second,
+  the screen above the conversation, Watch joins voice, three sharing at most.
+- ✅ **T-1902 · The server** — the screen socket (`gateway/screen_socket.rs`), the
+  board that passes frames on, picks formats, skips a watcher that falls behind and
+  holds a share to its ceiling (`gateway/screens.rs`), `screen` and `watching` in
+  `voice.state`, `screens` in `GET /server`. Tests: the board's own, and
+  `tests/screen.rs` over real sockets.
+- 🟡 **T-1903 · Sharing from the app** — built (`lib/screen/share.ts`) and through a
+  real server in Chromium (`scripts/screen-loop.mjs`). **Still to do:** a share from
+  the real Windows app, watched for real. `client/scripts/windows-screen-check.mjs`
+  checks the installed app's WebView2 in the package check: the picker, the track
+  processor, VP8 at 1080p60, shown and minimized.
+- ✅ **T-1904 · Watching in the app** — `lib/screen/watch.ts`; Chromium and WebKit
+  play a share through a real server, and in the browser tests. A screen left open
+  after its share ended opens the same person's next share there by itself (Matt,
+  2026-10-26), once they've stopped: a watch that ended while they still share
+  doesn't come back, or two windows would take it from each other.
+- 🟡 **T-1905 · The screens** — built and in the browser tests
+  (`next-screen.spec.ts`). A share from a popped-out conversation has its box under
+  that window's voice line, which has no voice bar (Matt, 2026-10-26), and says there
+  why it ended by itself. **Still to do:** look at it in the real Linux and
+  Windows apps.
+- 🟡 **T-1906 · Watching on a phone** — the layout is built and tested at phone size.
+  **Still to do:** an Android phone and an iPhone watching for real (an iPhone
+  before iOS 16.4 has no WebCodecs, and offers no Watch).
+- 🟡 **T-1907 · Sharing from Linux and macOS** — **Linux works, from Matt's desktop
+  (2026-10-25).** WebKitGTK couldn't do it: it reads a shared screen only as GPU buffers
+  (DMA-BUF), and on Matt's two-GPU machine and in a container it never turned them into
+  a picture. So on Linux the shell captures the screen itself
+  (`src-tauri/src/screen_shell.rs`, `screen_shell/linux.rs`): the desktop's ScreenCast
+  portal picks it, GStreamer reads the PipeWire stream in ordinary memory, scales it to
+  fit 1080p and encodes VP8, and the page gets finished frames on a Tauri channel and
+  sends them on the screen socket as usual (`lib/screen/shell.ts`). The size is asked
+  for by name: asked as a range, Hyprland's portal gave a 4K monitor at 2×2. A preview
+  of 480×270 JPEGs at 4 a second comes on another channel, made only while shown. Share
+  is offered on Linux once the shell says the portal and GStreamer's PipeWire and VP8
+  plugins are there. The packages bring PipeWire's GStreamer plugin (required on Arch,
+  recommended in the .deb and .rpm, #377). The AppImage doesn't share: its bundled
+  GStreamer has no PipeWire source, and a bundled PipeWire could disagree with the
+  computer's. Checked on Matt's Omarchy desktop (a window, then his whole 4K screen,
+  30 and 60 fps) and in a container with sway's portal. On 2026-10-25 the real app
+  (a debug build with its pages inside) ran in that container on a virtual display,
+  driven by an injected script through its own screens: joined the test server by
+  invite, joined voice, Share at 30 fps, the preview shown, hidden and shown again,
+  Stop, with the menu staying shut; a watcher on the test server saw the screen at its
+  own 1280×720 the whole time. On 2026-10-26 Matt shared his whole 4K screen three
+  times, at 30 and 60 fps, with the preview hidden and shown: the watcher got
+  1920×1080 each time, and a window on another workspace, out of sight, which the
+  watcher saw at 1920×1056. macOS is still Share-less: nobody has tried its picker.
+- ⬜ **T-1908 · The real check** — a Windows share watched on Linux, Windows, Android and an
+  iPhone through the real server, at both speeds, for half an hour.
+- ⬜ **T-1909 · Streaming a game** — the computer's sound, the graphics card's encoder, later.
+
 ---
 
 ## V3 — further out than V2, and not all of it will happen
