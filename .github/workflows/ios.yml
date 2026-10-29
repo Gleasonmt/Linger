@@ -99,8 +99,10 @@ jobs:
             printf '%s: %s\n' "$key" "$(plutil -extract "$key" raw "$RUNNER_TEMP/Info.plist")"
           done
           # App Store Connect refuses an app for iOS 14 from April 2027 (#743).
-          # A regenerated Xcode project would bring back Tauri's default, 14.0.
-          want="$(plutil -extract bundle.iOS.minimumSystemVersion raw client/src-tauri/tauri.ios.conf.json)"
+          # The oldest iOS is in five places (tauri.ios.conf.json, project.yml,
+          # both .xcodeproj configurations, the Podfile), and only the
+          # .xcodeproj decides what's built, so this catches them drifting apart.
+          want="$(node -p "require('./client/src-tauri/tauri.ios.conf.json').bundle.iOS.minimumSystemVersion")"
           got="$(plutil -extract MinimumOSVersion raw "$RUNNER_TEMP/Info.plist")"
           printf 'MinimumOSVersion: %s\n' "$got"
           [ "$got" = "$want" ] ||
