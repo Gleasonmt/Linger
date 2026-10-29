@@ -1112,7 +1112,8 @@ one and keeps them signed in, because every release is signed with the same key.
 Settings says which version it is (Account & App, under This Phone), since that is
 where updating by hand starts. The iPhone came after Android: its builds go to Apple's
 TestFlight for invited testers until it's in the App Store (`docs/releasing.md`, "The
-iPhone").
+iPhone"). It needs iOS 15 or later, the oldest App Store Connect takes from April
+2027 (#743).
 
 **Report and block come before any store listing** (T-1605). Both stores require them
 in apps where people post things. A report goes to the host and any co-hosts (§4.16),

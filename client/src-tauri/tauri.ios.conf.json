@@ -3,7 +3,8 @@
   "identifier": "io.github.itsmattguenther.linger",
   "bundle": {
     "iOS": {
-      "developmentTeam": "SFTT38V54H"
+      "developmentTeam": "SFTT38V54H",
+      "minimumSystemVersion": "15.0"
     }
   },
   "app": {
