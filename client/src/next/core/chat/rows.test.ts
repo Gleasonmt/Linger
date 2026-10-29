@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../../../generated/Message";
-import { chatRows, lastEditable, rowIndex, sameRow } from "./rows";
+import { chatRows, lastEditable, newestShareLines, rowIndex, sameRow, shareLineState } from "./rows";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-09-25T22:00:00Z");
@@ -130,6 +130,48 @@ describe("somebody leaving a group DM (#565)", () => {
     expect(lastEditable([message(1, "matt", T0), left(2, "matt", T0 + MIN)], "matt", true)?.id).toBe("m000001");
     const rows = chatRows([message(1, "eli", T0), left(2, "jules", T0 + MIN, { deleted_at: T0 + 2 * MIN, body: "" })], [], { atStart: false, leftOff: null });
     expect(heads(rows)).toEqual([["m000001", true]]);
+  });
+});
+
+describe("somebody sharing their screen (#746)", () => {
+  const shared = (n: number, author: string, at: number, extra: Partial<Message> = {}) => message(n, author, at, { body: "shared their screen", screen_share: true, ...extra });
+
+  it("is a line of its own, and whoever speaks next is named again", () => {
+    const rows = chatRows([message(1, "jules", T0), shared(2, "jules", T0 + MIN), message(3, "jules", T0 + 2 * MIN)], [], { atStart: false, leftOff: null });
+    expect(heads(rows)).toEqual([["m000001", true], ["m000002", true], ["m000003", true]]);
+  });
+
+  it("is never what Up edits, and one taken back just isn't there", () => {
+    expect(lastEditable([message(1, "matt", T0), shared(2, "matt", T0 + MIN)], "matt", true)?.id).toBe("m000001");
+    const rows = chatRows([message(1, "eli", T0), shared(2, "jules", T0 + MIN, { deleted_at: T0 + 2 * MIN, body: "" })], [], { atStart: false, leftOff: null });
+    expect(heads(rows)).toEqual([["m000001", true]]);
+  });
+
+  it("only each person's newest can say they're sharing now", () => {
+    const rows = chatRows(
+      [shared(1, "jules", T0), message(2, "dave", T0 + MIN), shared(3, "eli", T0 + 2 * MIN), shared(4, "jules", T0 + 3 * MIN)],
+      [],
+      { atStart: false, leftOff: null },
+    );
+    expect([...newestShareLines(rows)].sort()).toEqual(["m000003", "m000004"]);
+  });
+
+  it("says a share is going only on its person's newest line, at the newest end, while they share", () => {
+    const older = shared(1, "jules", T0);
+    const newer = shared(2, "jules", T0 + MIN);
+    const newest = newestShareLines(chatRows([older, newer], [], { atStart: false, leftOff: null }));
+    const sharing = { live: new Set(["jules"]), watchable: new Set(["jules"]) };
+    expect(shareLineState(newer, newest, sharing, true)).toBe("watch");
+    expect(shareLineState(older, newest, sharing, true)).toBeUndefined();
+    // Watching it, or your own: going, without Watch.
+    expect(shareLineState(newer, newest, { live: new Set(["jules"]), watchable: new Set() }, true)).toBe("live");
+    // Over.
+    expect(shareLineState(newer, newest, { live: new Set(), watchable: new Set() }, true)).toBeUndefined();
+    // In a stretch of older history a newer line may be out of reach: the
+    // newest line held there is a share that's over (#751's review).
+    const alone = newestShareLines(chatRows([older], [], { atStart: false, leftOff: null }));
+    expect(shareLineState(older, alone, sharing, false)).toBeUndefined();
+    expect(shareLineState(message(3, "jules", T0), newest, sharing, true)).toBeUndefined();
   });
 });
 

@@ -283,16 +283,17 @@ keyword-based system delivers it.
 
 **Notification chimes** (2026-09-17). Optional, short, quiet cues, with one
 master silence switch and separate controls for voice sessions, microphone/
-deafen controls, DMs, room messages, knocks and somebody starting to watch your
-screen (#735). Voice/control/DM/knock/watching sounds default on; ordinary
+deafen controls, DMs, room messages, knocks, somebody starting or stopping a
+screen share (#746) and somebody starting to watch yours (#735).
+Voice/control/DM/knock/sharing/watching sounds default on; ordinary
 room-message sounds default off. Quiet hours are
 listener-local, off until they opt in, and run 22:00–08:00 unless the listener
 moves them: a start and an end in half-hour steps, crossing midnight or not
 (#185). Quiet hours silence the
 notifications that arrive on their own: DM, room-message and knock chimes.
-Voice, mic/deafen and watching cues answer something the listener is doing in a
-call, so quiet hours leave them alone; mute and their own switches still silence
-them (#186). None of these settings touch other people's voice; deafen is the control
+Voice, mic/deafen, sharing and watching cues answer something the listener is
+doing in a call, so quiet hours leave them alone; mute and their own switches
+still silence them (#186). None of these settings touch other people's voice; deafen is the control
 for that (§4.14). The play control in settings is a deliberate click and is not gated
 by mute, quiet hours or category switches.
 
@@ -323,6 +324,19 @@ people's voice.
   Watch joins voice first for somebody outside it: while you share, a voice
   join waits two seconds, and if that person starts watching in that time,
   only the watching cue plays.
+- Sharing cues (#746, §4.20): everybody in a voice hears one when somebody
+  there starts sharing their screen, wherever their attention is, and its
+  mirror when they stop. The person sharing hears them too, every time their
+  own share really starts or ends. For somebody else's share the start and the
+  stop each sound at most once a minute for each person, as voice arrivals and
+  leavings do (#473): stopping to pick another window and sharing again sounds
+  the stop, then the start, once, and any more of it inside that minute is
+  quiet. No cue for a share already going when you join voice or connect, a
+  reconnect's replay, or a share that ended because its person left voice (the
+  leave cue says it); one frame with a start and a stop sounds the start. Two
+  soft chords stepping up, the only cue with notes together, a DM's cousin,
+  never heard as a join; stopping, the same chords stepping down, a touch
+  softer.
 - DM/room-message cues: new messages from others, not messages currently being
   read in the focused app, edits, history loads, replay or duplicates. One
   short cue per message burst, not a sound per line. DMs remain membership-filtered.
@@ -1341,6 +1355,37 @@ for each new watcher would ring the whole room. At most once a minute for each p
 and a reconnect is the same watch. Stopping makes no sound, the same as leaving a room.
 It's on by default, with its own switch among the notification chimes (§4.2), and quiet
 hours leave it alone, like the voice cues.
+
+**Everybody in voice knows a share started** (Matt, 2026-10-29, #746). In a room of
+seven somebody started sharing and most of the room didn't notice: no sound, and the
+only signs were a small mark on a chip and a Watch in a room they weren't reading.
+
+- **A sound for everybody in that voice**, two soft chords stepping up, when a share
+  starts, and the same chords stepping down when it stops (Matt, 2026-10-29), the
+  person sharing included: for them they say their share really is going, or has
+  really ended. Each at most once a minute for each person sharing, as joining and
+  leaving voice are, never for a share already going when you join or reconnect, and
+  no stop for somebody who left voice (the leave sound says it). Their own switch
+  among the notification chimes (§4.2), on by default; quiet hours leave them alone,
+  like the voice cues.
+- **Watch is lit** (in the lamp) wherever it's offered, for as long as somebody shares
+  and you aren't watching them: a share is something to look at the whole time it's
+  going. Beside a lit Watch, Join is an outline: Watch joins voice too, and two lit
+  buttons side by side would say neither.
+- **The voice bar says who's sharing**, "Jules is sharing their screen", with Watch,
+  one line for each share you didn't start, so it's in reach from whatever room you're
+  reading. Watch there opens that room's conversation, where conversations open, and
+  starts watching above it. While you watch, the line says "You're watching Jules's
+  screen" instead.
+- **A quiet line in the conversation**, like "joined voice" (§4.1): "Jules is sharing
+  their screen · Watch" while they are, then "Jules shared their screen" for good. It is
+  written once a share has lasted ten seconds, at most once per person per room every
+  ten minutes, so a misclick or picking another window leaves nothing more. It calls
+  nobody: no sound of its own, no notification, and the room doesn't turn bold.
+
+None of it opens a screen by itself (watching stays a choice), says what's shared, or
+counts anybody. There is no desktop notification for a share: banners are for what's
+addressed to you (§4.2), and the sound already reaches somebody looking at another app.
 
 **Where it shows.** Watching puts the screen above the room's conversation, with the
 conversation and its message box carrying on underneath; the line between them drags,
