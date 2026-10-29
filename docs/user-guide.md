@@ -30,7 +30,7 @@ You do **not** need `.sig`, `latest.json`, or the source-code ZIP/tar files.
 The `.msi` is an alternative Windows installer, not an extra required download.
 There are no macOS or ARM desktop installers yet. The iPhone app is only in
 testing, through Apple's TestFlight for invited testers, and isn't in the
-App Store yet.
+App Store yet. It needs iOS 15 or later.
 
 ### Windows
 

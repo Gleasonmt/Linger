@@ -393,7 +393,11 @@ one, so they run on GitHub's (`ios.yml`, docs/releasing.md, "The iPhone"). The
 Xcode project, `client/src-tauri/gen/apple`, came from `tauri ios init` on one
 of those Macs and is committed. Its `project.yml` is what XcodeGen makes the
 `.xcodeproj` from, so a change goes in both, or in `project.yml` and a fresh
-`xcodegen generate` on a Mac. The iPhone's Info.plist additions (the
+`xcodegen generate` on a Mac. The oldest iOS it runs on is
+`bundle.iOS.minimumSystemVersion` in `tauri.ios.conf.json`, and the same
+number is in `project.yml`, both of the `.xcodeproj`'s
+`IPHONEOS_DEPLOYMENT_TARGET` lines and the `Podfile`; `ios.yml` fails a build
+whose app says otherwise (#743). The iPhone's Info.plist additions (the
 microphone and camera wording, the encryption answer) are in
 `client/src-tauri/Info.ios.plist`, which `tauri ios build` merges in.
 `scripts/app-icons.mjs` writes the iPhone's icons too, from the square version
