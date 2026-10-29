@@ -61,6 +61,7 @@ const {
   KNOCK_TTL_MS,
   MAX_KNOCK_CARDS,
   leaveWindow,
+  onStateChange,
   loadNewer,
   loadNotifyRules,
   loadOlder,
@@ -974,6 +975,51 @@ describe("letting go of history", () => {
     expect(stream?.atStart).toBe(false);
   });
 
+  /** The growing room, with a send answered as its newest message (#750). */
+  async function sendingRoom(): Promise<{ api: AuthedApi; room: ReturnType<typeof growingRoom> }> {
+    const room = growingRoom(10_000);
+    const api = { ...fakeApi(HOME, room.get), post: async () => room.grow() } as unknown as AuthedApi;
+    await connect(api);
+    arrive(HOME, ready({ user: person("u-matt", "Matt") }));
+    await openRoom(api, "r-garage");
+    return { api, room };
+  }
+
+  const sentAs = () => serverState(HOME).streams["r-garage"]?.sentAs;
+
+  it("lets a send's stand-in id go with its message when the room lets history go (#750)", async () => {
+    const { api, room } = await sendingRoom();
+    await sendMessage(api, "r-garage", "first");
+    expect(Object.keys(sentAs() ?? {})).toEqual([id(10_001)]);
+    // Everybody else talks on, until the send is out of the newest page.
+    for (let n = 0; n < 120; n += 1) arrive(HOME, { s: n + 2, op: "message.create", d: room.grow() } as ServerFrame);
+    releaseOtherRooms(HOME, "r-porch");
+    expect(held()).not.toContain(id(10_001));
+    expect(sentAs()).toBeUndefined();
+
+    await sendMessage(api, "r-garage", "second");
+    expect(Object.keys(sentAs() ?? {})).toEqual([id(10_122)]);
+    await scrollBack(api, 8);
+    trimHistory(HOME, "r-garage", id(9_300), id(9_320));
+    expect(held()).not.toContain(id(10_122));
+    expect(sentAs()).toBeUndefined();
+  });
+
+  it("keeps a send's stand-in id through reading forwards while its message is held (#750)", async () => {
+    const { api, room } = await sendingRoom();
+    await sendMessage(api, "r-garage", "first");
+    for (let n = 0; n < 49; n += 1) arrive(HOME, { s: n + 2, op: "message.create", d: room.grow() } as ServerFrame);
+    await scrollBack(api, 8);
+    // The newer end goes down to the send: the room is behind, the send still held.
+    trimHistory(HOME, "r-garage", id(9_690), id(9_701));
+    expect(held().at(-1)).toBe(id(10_001));
+    expect(serverState(HOME).streams["r-garage"]?.atEnd).toBe(false);
+
+    await loadNewer(api, "r-garage");
+    expect(held().at(-1)).toBe(id(10_050));
+    expect(sentAs()).toEqual({ [id(10_001)]: expect.stringMatching(/^pending:/) });
+  });
+
   it("reads back to the newest without a gap after letting the newer end go", async () => {
     const room = growingRoom(10_000);
     const api = fakeApi(HOME, room.get);
@@ -1508,6 +1554,33 @@ describe("sending before the server answers", () => {
 
     expect(shown()).toEqual(["hello"]);
     expect(serverState(HOME).streams["r-garage"]?.messages.map((one) => one.id)).toEqual([id(1)]);
+  });
+
+  it("keeps a confirmed send's stand-in id beside it, by either route, swapped in one change (#750)", async () => {
+    const { api, held } = await openGarage();
+    const sentAs = () => serverState(HOME).streams["r-garage"]?.sentAs;
+
+    const answered = sendMessage(api, "r-garage", "by the answer");
+    const first = serverState(HOME).streams["r-garage"]?.pending[0]?.message.id;
+    // Every change the room goes through still shows it, as the stand-in or as itself.
+    const changes: string[][] = [];
+    const stop = onStateChange(() => changes.push(shown()));
+    held[0]?.answer(confirmed(1, "by the answer"));
+    await answered;
+    stop();
+    expect(changes.length).toBeGreaterThan(0);
+    expect(changes.every((bodies) => bodies.filter((body) => body === "by the answer").length === 1)).toBe(true);
+    expect(sentAs()).toEqual({ [id(1)]: first });
+
+    const announced = sendMessage(api, "r-garage", "by the announcement");
+    const second = serverState(HOME).streams["r-garage"]?.pending[0]?.message.id;
+    arrive(HOME, { s: 2, op: "message.create", d: confirmed(2, "by the announcement") } as ServerFrame);
+    expect(sentAs()).toEqual({ [id(1)]: first, [id(2)]: second });
+    // The answer coming after changes nothing.
+    held[1]?.answer(confirmed(2, "by the announcement"));
+    await announced;
+    expect(sentAs()).toEqual({ [id(1)]: first, [id(2)]: second });
+    expect(stillOpen()).toBe(0);
   });
 
   it("keeps the same words sent twice as two messages", async () => {
