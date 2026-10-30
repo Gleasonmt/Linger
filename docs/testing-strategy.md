@@ -76,6 +76,7 @@ version check, and the tests of these scripts themselves
 `scripts/package-deps.test.mjs`, `scripts/playwright-image.test.mjs`,
 `scripts/issue-label.test.mjs`, `scripts/action-pins.test.mjs`,
 `scripts/workflow-downloads.test.mjs`, `scripts/linux-next-env.test.mjs`,
+`scripts/doc-paths.test.mjs`,
 `scripts/startup-time.test.mjs`,
 `python3 scripts/linux-audio-check.test.py`,
 `scripts/android-signing-test.sh`, `scripts/tidy-branches-test.sh`,
@@ -180,7 +181,9 @@ rules that came out of them.
 - **A check that reads code or commands** (a lint, a parser, a rule about
   which files a change touches) **starts from a table of tricky inputs**:
   quoted and unquoted, with and without spaces, several commands on a line,
-  a command continued over lines, and every way to write what it looks for.
+  a command continued over lines, and every way to write what it looks for:
+  every form the language has, not only the ones in use today (Markdown
+  links come plain, in angle brackets, as references and as HTML; #771).
   `scripts/workflow-downloads.test.mjs` took three rounds of review to get
   there (#763).
 - **State worked out from a room's history, or kept beside it, is tested with

@@ -76,6 +76,9 @@ to be right for every shape that window takes.
   *Missed because* nothing checks that a file the docs name exists, so a
   rename or a delete leaves every doc naming it stale too. *Changed:* #768
   merges first; #770 is a check that every file the living docs name exists.
+  Its first run found five more: a deleted walk-through script named twice,
+  the previous client's search folder, and a prototype on a deleted branch,
+  named twice. Each is now in `commit:path` form, which says where it is.
 
 ## Tests written from the case in mind, not from the ways things fail
 
@@ -94,3 +97,21 @@ to be right for every shape that window takes.
   the line is split as the shell splits it, and the table of tricky commands
   in `scripts/workflow-downloads.test.mjs` grew with each. Rule: a check that
   reads code or commands starts from that table (`docs/testing-strategy.md`).
+- **#771: the docs path check (#770) had three holes.** A directory deleted
+  whole left its names unread, since the directories were read from what was
+  there. A missing file name with spaces was reported cut at the first
+  space. And links in angle brackets, which `docs/development.md` uses for
+  the artwork, weren't read. *Missed because* the same gap as #763: its tests
+  were the forms the docs used that day. *Changed:* the directories are
+  written out, with a test that a new one is added; a spaced name is read
+  whole; angle-bracket links are read. Closing it turned up two more forms
+  nobody had flagged, reference links and the README's HTML tags, read now
+  too. The rule now names a language's forms, not only its spacing.
+  A second round found more of both: HTML attributes quoted with `'` or not
+  at all, and a reference link's target on the next line, still unread; and
+  the test that every top-level directory is listed counted a local server's
+  `data/` and an editor's `.vscode/`, failing `check.sh` on a clean branch.
+  *Changed:* every link form is read by one function from one table
+  (`linkTargets`, 15 forms, a link's title among them, which nobody had
+  flagged), and the directories compared are the ones git tracks. Adding
+  forms one review at a time was the gap itself.
