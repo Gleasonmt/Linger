@@ -20,7 +20,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { validScale } from "../../lib/interface";
+import { validScale, validTextSize } from "../../lib/interface";
 import { applyNormalize, loadNormalize } from "../../lib/normalize";
 import { PROTOCOL, tauriBus } from "./bus";
 import { onPhone } from "./phone";
@@ -49,6 +49,28 @@ export function saveScale(value: number): number {
     // Storage refused: this session still gets what was asked for.
   }
   return scale;
+}
+
+/** The phone's own Text size (#690), a percentage on top of the phone's text size. */
+const TEXT_SIZE_KEY = "linger.next.textSize";
+
+export function loadTextSize(): number {
+  try {
+    return validTextSize(Number(window.localStorage.getItem(TEXT_SIZE_KEY)));
+  } catch {
+    return 100;
+  }
+}
+
+/** Save the phone's Text size; anything not on the list is 100. Returns what was saved. */
+export function saveTextSize(value: number): number {
+  const size = validTextSize(value);
+  try {
+    window.localStorage.setItem(TEXT_SIZE_KEY, String(size));
+  } catch {
+    // Storage refused: this session still gets what was asked for.
+  }
+  return size;
 }
 
 /** One line per person in the list (#197): off unless turned on. */
